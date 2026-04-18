@@ -1,11 +1,8 @@
 import './globals.css';
 
-import { Analytics } from '@vercel/analytics/react';
-
 export const metadata = {
-  title: 'Next.js App Router + NextAuth + Tailwind CSS',
-  description:
-    'A user admin dashboard configured with Next.js, Postgres, NextAuth, Tailwind CSS, TypeScript, and Prettier.'
+  title: '微信公众号管理后台',
+  description: '基于 Next.js 的微信公众号管理后台系统'
 };
 
 export default function RootLayout({
@@ -14,9 +11,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body className="flex min-h-screen w-full flex-col">{children}</body>
-      <Analytics />
     </html>
   );
 }

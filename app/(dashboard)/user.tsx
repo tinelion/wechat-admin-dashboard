@@ -1,6 +1,7 @@
+'use client';
+
+import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
-import { auth, signOut } from '@/lib/auth';
-import Image from 'next/image';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,9 +12,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Link from 'next/link';
 
-export async function User() {
-  let session = await auth();
-  let user = session?.user;
+export function User({ userName }: { userName?: string | null }) {
+  const handleSignOut = async () => {
+    await signOut({ callbackUrl: '/login' });
+  };
 
   return (
     <DropdownMenu>
@@ -21,39 +23,27 @@ export async function User() {
         <Button
           variant="outline"
           size="icon"
-          className="overflow-hidden rounded-full"
+          className="overflow-hidden rounded-full p-0"
         >
-          <Image
-            src={user?.image ?? '/placeholder-user.jpg'}
-            width={36}
-            height={36}
-            alt="Avatar"
-            className="overflow-hidden rounded-full"
+          <img
+            src="/avatar-placeholder.svg"
+            alt="头像"
+            className="h-9 w-9 rounded-full"
           />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuLabel>My Account</DropdownMenuLabel>
+        <DropdownMenuLabel>
+          {userName || '管理员'}
+        </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>Settings</DropdownMenuItem>
-        <DropdownMenuItem>Support</DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/settings">系统设置</Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
-        {user ? (
-          <DropdownMenuItem>
-            <form
-              action={async () => {
-                'use server';
-                await signOut();
-              }}
-            >
-              <button type="submit">Sign Out</button>
-            </form>
-          </DropdownMenuItem>
-        ) : (
-          <DropdownMenuItem>
-            <Link href="/login">Sign In</Link>
-          </DropdownMenuItem>
-        )}
+        <DropdownMenuItem onClick={handleSignOut}>
+          退出登录
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
