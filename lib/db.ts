@@ -110,6 +110,73 @@ export const dailyStats = pgTable('daily_stats', {
   messageCount: integer('message_count').notNull().default(0),
 });
 
+export const fanTags = pgTable('fan_tags', {
+  id: serial('id').primaryKey(),
+  configId: integer('config_id'),
+  tagId: integer('tag_id').notNull(),
+  name: text('name').notNull(),
+  count: integer('count').default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const aiConfig = pgTable('ai_config', {
+  id: serial('id').primaryKey(),
+  configId: integer('config_id'),
+  provider: text('provider').notNull().default('coze'),
+  enabled: boolean('enabled').notNull().default(false),
+  cozeBotId: text('coze_bot_id'),
+  cozeApiToken: text('coze_api_token'),
+  cozeApiBase: text('coze_api_base').default('https://api.coze.cn'),
+  llmProvider: text('llm_provider'),
+  llmApiKey: text('llm_api_key'),
+  llmModel: text('llm_model'),
+  llmBaseUrl: text('llm_base_url'),
+  systemPrompt: text('system_prompt'),
+  fallbackReply: text('fallback_reply').default('抱歉，我暂时无法回答您的问题，稍后人工客服会回复您。'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const templates = pgTable('templates', {
+  id: serial('id').primaryKey(),
+  configId: integer('config_id'),
+  templateId: text('template_id').notNull(),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const massMessages = pgTable('mass_messages', {
+  id: serial('id').primaryKey(),
+  configId: integer('config_id'),
+  msgType: text('msg_type').notNull(),
+  content: text('content').notNull(),
+  title: text('title'),
+  description: text('description'),
+  target: text('target').notNull(),
+  tagId: integer('tag_id'),
+  totalFans: integer('total_fans').default(0),
+  sentCount: integer('sent_count').default(0),
+  errorCount: integer('error_count').default(0),
+  status: text('status').notNull().default('pending'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  sentAt: timestamp('sent_at'),
+});
+
+export const qrcodes = pgTable('qrcodes', {
+  id: serial('id').primaryKey(),
+  configId: integer('config_id'),
+  sceneStr: text('scene_str').notNull(),
+  ticket: text('ticket'),
+  url: text('url'),
+  expireSeconds: integer('expire_seconds'),
+  expired: boolean('expired').notNull().default(false),
+  scanCount: integer('scan_count').default(0),
+  remark: text('remark'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // ==================== Types ====================
 export type SelectFan = typeof fans.$inferSelect;
 export type SelectMessage = typeof messages.$inferSelect;
@@ -117,6 +184,11 @@ export type SelectAutoReply = typeof autoReplies.$inferSelect;
 export type SelectWechatConfig = typeof wechatConfig.$inferSelect;
 export type SelectMenuConfig = typeof menuConfig.$inferSelect;
 export type SelectDailyStats = typeof dailyStats.$inferSelect;
+export type SelectFanTag = typeof fanTags.$inferSelect;
+export type SelectAiConfig = typeof aiConfig.$inferSelect;
+export type SelectTemplate = typeof templates.$inferSelect;
+export type SelectMassMessage = typeof massMessages.$inferSelect;
+export type SelectQrcode = typeof qrcodes.$inferSelect;
 
 // ==================== Database Connection ====================
 
@@ -473,5 +545,249 @@ export async function incrementStat(field: 'newFans' | 'unfollowFans' | 'message
   } else {
     const totalFans = await getFansCount(configId);
     await db.insert(dailyStats).values({ date: today, [colName]: 1, totalFans, configId: configId || null });
+  }
+}
+
+// ==================== Fan Tags ====================
+
+export async function getFanTags(configId?: number) {
+  const conditions = [];
+  if (configId) {
+    conditions.push(eq(fanTags.configId, configId));
+  }
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  return db.select().from(fanTags)
+    .where(whereClause)
+    .orderBy(fanTags.createdAt);
+}
+
+export async function syncFanTags(configId?: number) {
+  const { getTags } = await import('@/lib/wechat');
+  const result = await getTags(configId);
+
+  if (result.errcode) {
+    throw new Error(`同步标签失败 [${result.errcode}]: ${result.errmsg}`);
+  }
+
+  const tags = result.tags || [];
+  for (const tag of tags) {
+    const conditions = [
+      eq(fanTags.tagId, tag.id),
+    ];
+    if (configId) {
+      conditions.push(eq(fanTags.configId, configId));
+    }
+    const existing = await db.select().from(fanTags).where(and(...conditions));
+    if (existing[0]) {
+      await db.update(fanTags)
+        .set({ name: tag.name, count: tag.count || 0 })
+        .where(eq(fanTags.id, existing[0].id));
+    } else {
+      await db.insert(fanTags).values({
+        configId: configId || null,
+        tagId: tag.id,
+        name: tag.name,
+        count: tag.count || 0,
+      });
+    }
+  }
+
+  return getFanTags(configId);
+}
+
+export async function getFanTagsByOpenid(openid: string, configId?: number) {
+  const fan = await getFanByOpenid(openid, configId);
+  if (!fan || !fan.tagIds) return [];
+
+  const tagIdList = fan.tagIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+  if (tagIdList.length === 0) return [];
+
+  const conditions = [];
+  if (configId) {
+    conditions.push(eq(fanTags.configId, configId));
+  }
+  const whereClause = conditions.length > 0
+    ? and(sql`${fanTags.tagId} = ANY(${tagIdList})`, ...conditions)
+    : sql`${fanTags.tagId} = ANY(${tagIdList})`;
+
+  return db.select().from(fanTags).where(whereClause);
+}
+
+// ==================== AI Config ====================
+
+export async function getAiConfig(configId?: number) {
+  const conditions = [];
+  if (configId) {
+    conditions.push(eq(aiConfig.configId, configId));
+  }
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const result = await db.select().from(aiConfig).where(whereClause).limit(1);
+  return result[0];
+}
+
+export async function saveAiConfig(data: {
+  provider?: string;
+  enabled?: boolean;
+  cozeBotId?: string;
+  cozeApiToken?: string;
+  cozeApiBase?: string;
+  llmProvider?: string;
+  llmApiKey?: string;
+  llmModel?: string;
+  llmBaseUrl?: string;
+  systemPrompt?: string;
+  fallbackReply?: string;
+}, configId?: number) {
+  const existing = await getAiConfig(configId);
+  if (existing) {
+    return db.update(aiConfig)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(aiConfig.id, existing.id));
+  }
+  return db.insert(aiConfig).values({ ...data, configId: configId || null });
+}
+
+// ==================== Enhanced Stats ====================
+
+export async function getMessageStats(days: number, configId?: number) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  const dateStr = date.toISOString().slice(0, 10);
+
+  const conditions = [
+    sql`date(created_at) >= ${dateStr}`,
+    eq(messages.isOutgoing, false),
+  ];
+  if (configId) {
+    conditions.push(eq(messages.configId, configId));
+  }
+
+  const result = await db
+    .select({
+      date: sql`date(created_at)`.as('date'),
+      messageCount: count(),
+    })
+    .from(messages)
+    .where(and(...conditions))
+    .groupBy(sql`date(created_at)`)
+    .orderBy(sql`date(created_at)`);
+
+  return result;
+}
+
+export async function getTopKeywords(days: number, configId?: number, limit: number = 20) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  const dateStr = date.toISOString().slice(0, 10);
+
+  const conditions = [
+    sql`date(created_at) >= ${dateStr}`,
+    eq(messages.msgType, 'text'),
+    eq(messages.isOutgoing, false),
+    sql`content IS NOT NULL`,
+    sql`length(content) > 1`,
+  ];
+  if (configId) {
+    conditions.push(eq(messages.configId, configId));
+  }
+
+  const result = await db
+    .select({
+      keyword: sql`unnest(string_to_array(content, ' '))`.as('keyword'),
+      count: count(),
+    })
+    .from(messages)
+    .where(and(...conditions))
+    .groupBy(sql`unnest(string_to_array(content, ' '))`)
+    .orderBy(sql`count DESC`)
+    .limit(limit);
+
+  return result;
+}
+
+// Templates
+export async function getTemplates(configId?: number) {
+  const whereClause = configId ? eq(templates.configId, configId) : undefined;
+  return db.select().from(templates)
+    .where(whereClause)
+    .orderBy(desc(templates.createdAt));
+}
+
+export async function addTemplate(data: {
+  templateId: string;
+  title: string;
+  content: string;
+  enabled?: boolean;
+}, configId?: number) {
+  return db.insert(templates).values({ ...data, configId: configId || null });
+}
+
+export async function deleteTemplate(id: number) {
+  return db.delete(templates).where(eq(templates.id, id));
+}
+
+// Mass Messages
+export async function getMassMessages(configId?: number) {
+  const whereClause = configId ? eq(massMessages.configId, configId) : undefined;
+  return db.select().from(massMessages)
+    .where(whereClause)
+    .orderBy(desc(massMessages.createdAt));
+}
+
+export async function createMassMessage(data: {
+  msgType: string;
+  content: string;
+  title?: string;
+  description?: string;
+  target: string;
+  tagId?: number;
+  totalFans?: number;
+}, configId?: number) {
+  return db.insert(massMessages).values({
+    ...data,
+    totalFans: data.totalFans || 0,
+    configId: configId || null,
+  });
+}
+
+export async function updateMassMessage(id: number, data: {
+  status?: string;
+  sentCount?: number;
+  errorCount?: number;
+  sentAt?: Date;
+}) {
+  return db.update(massMessages)
+    .set(data)
+    .where(eq(massMessages.id, id));
+}
+
+// Qrcodes
+export async function getQrcodes(configId?: number) {
+  const whereClause = configId ? eq(qrcodes.configId, configId) : undefined;
+  return db.select().from(qrcodes)
+    .where(whereClause)
+    .orderBy(desc(qrcodes.createdAt));
+}
+
+export async function addQrcode(data: {
+  sceneStr: string;
+  ticket?: string;
+  url?: string;
+  expireSeconds?: number;
+  remark?: string;
+}, configId?: number) {
+  return db.insert(qrcodes).values({ ...data, configId: configId || null });
+}
+
+export async function incrementQrcodeScan(sceneStr: string, configId?: number) {
+  const conditions = [eq(qrcodes.sceneStr, sceneStr)];
+  if (configId) {
+    conditions.push(eq(qrcodes.configId, configId));
+  }
+  const existing = await db.select().from(qrcodes).where(and(...conditions));
+  if (existing[0]) {
+    await db.update(qrcodes)
+      .set({ scanCount: sql`${qrcodes.scanCount} + 1` })
+      .where(eq(qrcodes.id, existing[0].id));
   }
 }

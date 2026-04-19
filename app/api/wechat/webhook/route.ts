@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySignature } from '@/lib/wechat';
-import { upsertFan, getFanByOpenid, addMessage, incrementStat, getAutoReplies, getConfig, db, fans, wechatConfig } from '@/lib/db';
+import { upsertFan, getFanByOpenid, addMessage, incrementStat, getAutoReplies, getConfig, db, fans, wechatConfig, getAiConfig } from '@/lib/db';
 import { sendTextMessage, getUserInfo } from '@/lib/wechat';
+import { aiReply } from '@/lib/ai';
 import { eq, sql, and } from 'drizzle-orm';
 import crypto from 'crypto';
 
@@ -333,6 +334,26 @@ async function handleTextMessage(
   const defaultReplies = await getAutoReplies('default', configId);
   if (defaultReplies.length > 0 && defaultReplies[0].enabled) {
     return buildTextXml(fromUser, toUser, defaultReplies[0].replyContent);
+  }
+
+  // 3. AI customer service fallback
+  const aiConfig = await getAiConfig(configId);
+  if (aiConfig && aiConfig.enabled) {
+    try {
+      const aiResponse = await aiReply(content, fromUser, configId);
+      if (aiResponse) {
+        // Record AI reply to messages table
+        await addMessage({
+          openid: fromUser,
+          msgType: 'text',
+          content: aiResponse,
+          isOutgoing: true,
+        }, configId);
+        return buildTextXml(fromUser, toUser, aiResponse);
+      }
+    } catch (e) {
+      console.error('AI reply failed:', e);
+    }
   }
 
   return '';

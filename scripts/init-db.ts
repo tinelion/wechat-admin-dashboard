@@ -158,6 +158,83 @@ async function init() {
     )
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS fan_tags (
+      id SERIAL PRIMARY KEY,
+      config_id INTEGER,
+      tag_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      count INTEGER DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai_config (
+      id SERIAL PRIMARY KEY,
+      config_id INTEGER,
+      provider TEXT NOT NULL DEFAULT 'coze',
+      enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      coze_bot_id TEXT,
+      coze_api_token TEXT,
+      coze_api_base TEXT DEFAULT 'https://api.coze.cn',
+      llm_provider TEXT,
+      llm_api_key TEXT,
+      llm_model TEXT,
+      llm_base_url TEXT,
+      system_prompt TEXT,
+      fallback_reply TEXT DEFAULT '抱歉，我暂时无法回答您的问题，稍后人工客服会回复您。',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS templates (
+      id SERIAL PRIMARY KEY,
+      config_id INTEGER,
+      template_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS mass_messages (
+      id SERIAL PRIMARY KEY,
+      config_id INTEGER,
+      msg_type TEXT NOT NULL,
+      content TEXT NOT NULL,
+      title TEXT,
+      description TEXT,
+      target TEXT NOT NULL,
+      tag_id INTEGER,
+      total_fans INTEGER DEFAULT 0,
+      sent_count INTEGER DEFAULT 0,
+      error_count INTEGER DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      sent_at TIMESTAMP
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS qrcodes (
+      id SERIAL PRIMARY KEY,
+      config_id INTEGER,
+      scene_str TEXT NOT NULL,
+      ticket TEXT,
+      url TEXT,
+      expire_seconds INTEGER,
+      expired BOOLEAN NOT NULL DEFAULT FALSE,
+      scan_count INTEGER DEFAULT 0,
+      remark TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+
   // Create indexes
   await sql`CREATE INDEX IF NOT EXISTS idx_fans_config_id ON fans(config_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_fans_openid ON fans(openid)`;
@@ -171,6 +248,14 @@ async function init() {
   await sql`CREATE INDEX IF NOT EXISTS idx_daily_stats_config_id ON daily_stats(config_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_daily_stats_date ON daily_stats(date)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_wechat_config_appid ON wechat_config(appid)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_fan_tags_config_id ON fan_tags(config_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_fan_tags_tag_id ON fan_tags(tag_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_ai_config_config_id ON ai_config(config_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_templates_config_id ON templates(config_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_mass_messages_config_id ON mass_messages(config_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_mass_messages_status ON mass_messages(status)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_qrcodes_config_id ON qrcodes(config_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_qrcodes_scene_str ON qrcodes(scene_str)`;
 
   // Migrate existing tables: add config_id column if not exists
   try {

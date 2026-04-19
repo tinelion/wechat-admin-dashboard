@@ -149,6 +149,83 @@ export async function createQrCode(sceneStr: string, expireSeconds?: number, con
   return wechatApi('/cgi-bin/qrcode/create', 'POST', body, configId);
 }
 
+// ==================== Mass Message APIs ====================
+
+export async function sendMassMessage(msgType: string, content: any, configId?: number) {
+  // 根据内容中的 target 决定调用哪个接口
+  if (content.target === 'all') {
+    // 全部粉丝
+    const body: any = {
+      filter: { is_to_all: true },
+      msgtype: msgType,
+    };
+    body[msgType] = content.media || { content: content.text };
+    return wechatApi('/cgi-bin/message/mass/sendall', 'POST', body, configId);
+  } else if (content.target === 'tag') {
+    // 按标签
+    const body: any = {
+      filter: { is_to_all: false, tag_id: content.tagId },
+      msgtype: msgType,
+    };
+    body[msgType] = content.media || { content: content.text };
+    return wechatApi('/cgi-bin/message/mass/sendall', 'POST', body, configId);
+  } else {
+    // 按 openid 列表
+    const body: any = {
+      touser: content.openidList || [],
+      msgtype: msgType,
+    };
+    body[msgType] = content.media || { content: content.text };
+    return wechatApi('/cgi-bin/message/mass/send', 'POST', body, configId);
+  }
+}
+
+export async function getMassMessageStatus(msgId: string, configId?: number) {
+  return wechatApi(`/cgi-bin/message/mass/get?msg_id=${msgId}`, 'GET', undefined, configId);
+}
+
+// ==================== Media APIs ====================
+
+export async function uploadTempMedia(type: string, buffer: Buffer, filename: string, configId?: number) {
+  const token = await getAccessToken(configId);
+  const url = `https://api.weixin.qq.com/cgi-bin/media/upload?access_token=${token}&type=${type}`;
+
+  const formData = new FormData();
+  formData.append('media', new Blob([buffer]), filename);
+
+  const res = await fetch(url, {
+    method: 'POST',
+    body: formData,
+  });
+  return res.json();
+}
+
+export async function uploadPermanentMedia(type: string, buffer: Buffer, filename: string, configId?: number) {
+  const token = await getAccessToken(configId);
+  const url = `https://api.weixin.qq.com/cgi-bin/material/add_material?access_token=${token}&type=${type}`;
+
+  const formData = new FormData();
+  formData.append('media', new Blob([buffer]), filename);
+
+  const res = await fetch(url, {
+    method: 'POST',
+    body: formData,
+  });
+  return res.json();
+}
+
+export async function getMediaList(type: string, offset: number, count: number, configId?: number) {
+  return wechatApi('/cgi-bin/material/batchget_material', 'POST', {
+    type,
+    offset,
+    count,
+  }, configId);
+}
+
+export async function deleteMedia(mediaId: string, configId?: number) {
+  return wechatApi('/cgi-bin/material/del_material', 'POST', { media_id: mediaId }, configId);
+}
+
 // ==================== Webhook Verification ====================
 
 export function verifySignature(token: string, signature: string, timestamp: string, nonce: string): boolean {

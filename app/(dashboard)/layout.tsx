@@ -11,6 +11,11 @@ import {
   Menu,
   Reply,
   ChevronDown,
+  Mail,
+  Megaphone,
+  Image,
+  QrCode,
+  Tag,
 } from 'lucide-react';
 
 import {
@@ -41,6 +46,11 @@ const navItems = [
   { href: '/messages', label: '消息管理', icon: MessageSquare },
   { href: '/auto-reply', label: '自动回复', icon: Reply },
   { href: '/menu', label: '菜单管理', icon: Menu },
+  { href: '/templates', label: '模板消息', icon: Mail },
+  { href: '/mass', label: '群发消息', icon: Megaphone },
+  { href: '/material', label: '素材管理', icon: Image },
+  { href: '/qrcodes', label: '二维码', icon: QrCode },
+  { href: '/tags', label: '粉丝标签', icon: Tag },
   { href: '/settings', label: '系统设置', icon: Settings },
 ];
 

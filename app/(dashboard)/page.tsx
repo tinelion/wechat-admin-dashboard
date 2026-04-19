@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, UserPlus, UserMinus, MessageSquare, TrendingUp } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Users, UserPlus, MessageSquare, TrendingUp, Hash } from 'lucide-react';
 import { useAccount } from './account-context';
 
 interface TodayStats {
@@ -20,10 +21,26 @@ interface DailyStat {
   message_count: number;
 }
 
+interface MessageDailyStat {
+  date: string;
+  count: number;
+}
+
+interface RecentMessage {
+  id: number;
+  openid: string;
+  content: string;
+  msgType: string;
+  createdAt: string;
+}
+
 export default function DashboardPage() {
   const { currentAccount, currentAccountId } = useAccount();
   const [stats, setStats] = useState<TodayStats | null>(null);
   const [recent, setRecent] = useState<DailyStat[]>([]);
+  const [daily, setDaily] = useState<MessageDailyStat[]>([]);
+  const [topKeywords, setTopKeywords] = useState<{ keyword: string; count: number }[]>([]);
+  const [recentMessages, setRecentMessages] = useState<RecentMessage[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,11 +49,17 @@ export default function DashboardPage() {
       return;
     }
     setLoading(true);
-    fetch(`/api/stats?configId=${currentAccountId}`)
-      .then(res => res.json())
-      .then(data => {
-        setStats(data.today);
-        setRecent(data.recent || []);
+
+    Promise.all([
+      fetch(`/api/stats?configId=${currentAccountId}`).then(res => res.json()),
+      fetch(`/api/messages?configId=${currentAccountId}&limit=5`).then(res => res.json()),
+    ])
+      .then(([statsData, messagesData]) => {
+        setStats(statsData.today);
+        setRecent(statsData.recent || []);
+        setDaily(statsData.daily || []);
+        setTopKeywords(statsData.topKeywords || []);
+        setRecentMessages(Array.isArray(messagesData) ? messagesData : (messagesData.messages || []));
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -66,7 +89,7 @@ export default function DashboardPage() {
 
   const statCards = [
     {
-      title: '总粉丝数',
+      title: '粉丝总数',
       value: stats?.totalFans || 0,
       icon: Users,
       description: '当前关注粉丝总数',
@@ -82,22 +105,26 @@ export default function DashboardPage() {
       bg: 'bg-green-50',
     },
     {
-      title: '今日取关',
-      value: stats?.unfollowFans || 0,
-      icon: UserMinus,
-      description: '今日取消关注',
-      color: 'text-red-600',
-      bg: 'bg-red-50',
+      title: '消息总数',
+      value: daily.reduce((sum, d) => sum + d.count, 0),
+      icon: MessageSquare,
+      description: '近7天消息总量',
+      color: 'text-purple-600',
+      bg: 'bg-purple-50',
     },
     {
       title: '今日消息',
       value: stats?.messageCount || 0,
-      icon: MessageSquare,
+      icon: TrendingUp,
       description: '今日收到消息数',
-      color: 'text-purple-600',
-      bg: 'bg-purple-50',
+      color: 'text-orange-600',
+      bg: 'bg-orange-50',
     },
   ];
+
+  // Last 7 days for bar chart
+  const last7Days = daily.slice(-7);
+  const maxCount = Math.max(...last7Days.map(d => d.count), 1);
 
   return (
     <div className="space-y-6">
@@ -108,6 +135,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {statCards.map((card) => (
           <Card key={card.title}>
@@ -127,7 +155,125 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Recent Trend */}
+      {/* Message Trend Bar Chart + Top Keywords */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Bar Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              消息趋势
+            </CardTitle>
+            <CardDescription>最近 7 天消息量</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {last7Days.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                暂无数据
+              </div>
+            ) : (
+              <div className="flex items-end gap-2 h-40">
+                {last7Days.map((d) => {
+                  const height = maxCount > 0 ? (d.count / maxCount) * 100 : 0;
+                  return (
+                    <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
+                      <span className="text-xs text-muted-foreground font-medium">
+                        {d.count}
+                      </span>
+                      <div className="w-full flex items-end" style={{ height: '100px' }}>
+                        <div
+                          className="w-full bg-primary/80 rounded-t-sm transition-all duration-300 hover:bg-primary"
+                          style={{ height: `${Math.max(height, 2)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {d.date.slice(5)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Top Keywords */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Hash className="h-5 w-5" />
+              高频关键词
+            </CardTitle>
+            <CardDescription>最近 7 天用户消息中的高频词</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {topKeywords.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                暂无数据
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {topKeywords.slice(0, 15).map((kw) => (
+                  <Badge
+                    key={kw.keyword}
+                    variant="secondary"
+                    className="text-sm py-1 px-3"
+                  >
+                    {kw.keyword}
+                    <span className="ml-1.5 text-muted-foreground text-xs">
+                      {kw.count}
+                    </span>
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent Messages */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            最近消息
+          </CardTitle>
+          <CardDescription>最新 5 条用户消息</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {recentMessages.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              暂无消息
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {recentMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className="flex items-start gap-3 p-3 rounded-lg bg-muted/50"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        {msg.openid.slice(0, 8)}...
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {msg.createdAt ? new Date(msg.createdAt).toLocaleString('zh-CN') : ''}
+                      </span>
+                    </div>
+                    <p className="text-sm truncate">{msg.content || '[非文本消息]'}</p>
+                  </div>
+                  <Badge variant="outline" className="shrink-0 text-xs">
+                    {msg.msgType || 'text'}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Recent Trend Table */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
