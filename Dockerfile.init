@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@10 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml ./
+COPY scripts ./scripts/
+COPY bcryptjs.d.ts ./
+
+RUN pnpm install --frozen-lockfile
+
+CMD ["sh", "-c", "pnpm exec tsx scripts/init-db.ts && echo '✅ Done! You can now remove this container.'"]

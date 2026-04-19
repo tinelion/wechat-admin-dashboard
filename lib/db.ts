@@ -1,38 +1,8 @@
 import 'server-only';
-import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
-import { drizzle, type NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import { pgTable, text, integer, real, boolean, serial, timestamp } from 'drizzle-orm/pg-core';
 import { count, eq, like, desc, and, sql, or } from 'drizzle-orm';
-
-function createDb() {
-  let sql_url = process.env.POSTGRES_URL;
-  if (!sql_url) throw new Error('POSTGRES_URL 环境变量未设置');
-  // @neondatabase/serverless uses HTTP, remove channel_binding param which causes errors
-  try {
-    const u = new URL(sql_url);
-    u.searchParams.delete('channel_binding');
-    sql_url = u.toString();
-  } catch {
-    // fallback: regex cleanup
-    sql_url = sql_url.replace(/[?&]channel_binding=[^&]*/g, (match) => {
-      return match.startsWith('?') ? '?' : '';
-    });
-  }
-  const client = neon(sql_url);
-  return drizzle(client);
-}
-
-let _db: NeonHttpDatabase | null = null;
-export function getDb(): NeonHttpDatabase {
-  if (!_db) _db = createDb();
-  return _db;
-}
-// For backward compatibility
-export const db = new Proxy({} as NeonHttpDatabase, {
-  get(_, prop) {
-    return (getDb() as any)[prop];
-  }
-});
+import type { NeonHttpDatabase } from 'drizzle-orm/neon-http';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 // ==================== Schema (PostgreSQL) ====================
 
@@ -141,6 +111,53 @@ export type SelectAutoReply = typeof autoReplies.$inferSelect;
 export type SelectWechatConfig = typeof wechatConfig.$inferSelect;
 export type SelectMenuConfig = typeof menuConfig.$inferSelect;
 export type SelectDailyStats = typeof dailyStats.$inferSelect;
+
+// ==================== Database Connection ====================
+
+type AnyDatabase = NeonHttpDatabase | NodePgDatabase;
+
+function createDb(): AnyDatabase {
+  const sql_url = process.env.POSTGRES_URL;
+  if (!sql_url) throw new Error('POSTGRES_URL 环境变量未设置');
+
+  // Detect connection type:
+  // - Neon HTTP: contains "neon.tech" or uses http:// prefix
+  // - Standard PostgreSQL: postgresql:// prefix (Docker, local, etc.)
+  const isNeonHttp = sql_url.includes('neon.tech') || sql_url.startsWith('http://');
+
+  if (isNeonHttp) {
+    // Neon serverless (HTTP) - used on Vercel
+    let cleanUrl = sql_url;
+    try {
+      const u = new URL(cleanUrl);
+      u.searchParams.delete('channel_binding');
+      cleanUrl = u.toString();
+    } catch {}
+    const { neon } = require('@neondatabase/serverless');
+    const { drizzle: drizzleNeon } = require('drizzle-orm/neon-http');
+    const client = neon(cleanUrl);
+    return drizzleNeon(client);
+  } else {
+    // Standard PostgreSQL (TCP) - used in Docker / local
+    const { Pool } = require('pg');
+    const { drizzle: drizzlePg } = require('drizzle-orm/node-postgres');
+    const pool = new Pool({ connectionString: sql_url });
+    return drizzlePg(pool);
+  }
+}
+
+let _db: AnyDatabase | null = null;
+export function getDb(): AnyDatabase {
+  if (!_db) _db = createDb();
+  return _db;
+}
+
+// Proxy for backward compatibility
+export const db = new Proxy({} as AnyDatabase, {
+  get(_, prop) {
+    return (getDb() as any)[prop];
+  }
+});
 
 // ==================== Helper Functions ====================
 

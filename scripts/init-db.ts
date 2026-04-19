@@ -1,4 +1,3 @@
-import { neon } from '@neondatabase/serverless';
 import bcrypt from 'bcryptjs';
 
 const sql_url = process.env.POSTGRES_URL;
@@ -7,7 +6,36 @@ if (!sql_url) {
   process.exit(1);
 }
 
-const sql = neon(sql_url);
+// Detect connection type
+const isNeonHttp = sql_url.includes('neon.tech') || sql_url.startsWith('http://');
+
+function getSqlExecutor() {
+  if (isNeonHttp) {
+    // Neon HTTP
+    let cleanUrl = sql_url!;
+    try {
+      const u = new URL(cleanUrl);
+      u.searchParams.delete('channel_binding');
+      cleanUrl = u.toString();
+    } catch {}
+    const { neon } = require('@neondatabase/serverless');
+    return neon(cleanUrl);
+  } else {
+    // Standard PostgreSQL (Docker / local)
+    const { Pool } = require('pg');
+    const pool = new Pool({ connectionString: sql_url });
+    const executor: any = async (...args: any[]) => {
+      const text = args[0];
+      const params = args.slice(1);
+      const res = await pool.query(text, params);
+      return res.rows;
+    };
+    executor.__pool = pool;
+    return executor;
+  }
+}
+
+const sql = getSqlExecutor();
 
 async function init() {
   console.log('🔧 Initializing database tables...');
@@ -146,6 +174,11 @@ async function init() {
   }
 
   console.log('✅ Database initialized successfully!');
+
+  // Close pool if using pg
+  if ((sql as any).__pool) {
+    await (sql as any).__pool.end();
+  }
 }
 
 init().catch(console.error);

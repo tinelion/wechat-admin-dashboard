@@ -1,0 +1,47 @@
+services:
+  # ---- PostgreSQL 数据库 ----
+  postgres:
+    image: postgres:16-alpine
+    container_name: wechat-postgres
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wechat} -d ${POSTGRES_DB:-wechat_admin}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---- Next.js 应用 ----
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wechat-admin
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---- 数据库初始化（一次性） ----
+  init-db:
+    build:
+      context: .
+      dockerfile: Dockerfile.init
+    container_name: wechat-init-db
+    env_file:
+      - .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
