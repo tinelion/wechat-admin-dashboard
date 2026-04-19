@@ -12,6 +12,7 @@ import {
   CardHeader,
   CardTitle
 } from '@/components/ui/card';
+import { SliderCaptcha } from '@/components/slider-captcha';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,10 +20,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [captchaVerified, setCaptchaVerified] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+
+    if (!captchaVerified) {
+      setError('请先完成滑块验证');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -33,16 +41,18 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        const msg = result.error === 'CredentialsSignin' 
-          ? '用户名或密码错误' 
+        const msg = result.error === 'CredentialsSignin'
+          ? '用户名或密码错误'
           : result.error;
         setError(msg);
+        setCaptchaVerified(false);
       } else {
         router.push('/');
         router.refresh();
       }
     } catch (err: any) {
       setError(err?.message || '登录失败，请重试');
+      setCaptchaVerified(false);
     } finally {
       setLoading(false);
     }
@@ -89,9 +99,16 @@ export default function LoginPage() {
                 required
               />
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">安全验证</label>
+              <SliderCaptcha
+                onSuccess={() => setCaptchaVerified(true)}
+                onReset={() => setCaptchaVerified(false)}
+              />
+            </div>
           </div>
           <CardFooter className="flex-col gap-4 px-6 pb-6 pt-4">
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading || !captchaVerified}>
               {loading ? '登录中...' : '登 录'}
             </Button>
           </CardFooter>
