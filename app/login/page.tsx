@@ -33,13 +33,16 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        setError('用户名或密码错误');
+        const msg = result.error === 'CredentialsSignin' 
+          ? '用户名或密码错误' 
+          : result.error;
+        setError(msg);
       } else {
         router.push('/');
         router.refresh();
       }
-    } catch {
-      setError('登录失败，请重试');
+    } catch (err: any) {
+      setError(err?.message || '登录失败，请重试');
     } finally {
       setLoading(false);
     }

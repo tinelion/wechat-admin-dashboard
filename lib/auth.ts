@@ -31,7 +31,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           };
         } catch (error) {
           console.error('Auth error:', error);
-          return null;
+          throw new Error('数据库连接失败，请检查环境变量配置');
         }
       },
     }),
