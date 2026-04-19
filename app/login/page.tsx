@@ -91,9 +91,6 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? '登录中...' : '登 录'}
             </Button>
-            <p className="text-xs text-muted-foreground text-center">
-              默认账号: admin / admin123
-            </p>
           </CardFooter>
         </form>
       </Card>

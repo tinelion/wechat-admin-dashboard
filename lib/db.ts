@@ -5,8 +5,10 @@ import { pgTable, text, integer, real, boolean, serial, timestamp } from 'drizzl
 import { count, eq, like, desc, and, sql, or } from 'drizzle-orm';
 
 function createDb() {
-  const sql_url = process.env.POSTGRES_URL;
+  let sql_url = process.env.POSTGRES_URL;
   if (!sql_url) throw new Error('POSTGRES_URL 环境变量未设置');
+  // @neondatabase/serverless uses HTTP, remove channel_binding param which causes errors
+  sql_url = sql_url.replace(/[?&]channel_binding=[^&]*/g, '').replace(/\?$/, '');
   const client = neon(sql_url);
   return drizzle(client);
 }
