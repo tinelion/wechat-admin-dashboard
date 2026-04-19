@@ -56,6 +56,7 @@ async function init() {
       appid TEXT NOT NULL,
       app_secret TEXT NOT NULL,
       name TEXT NOT NULL DEFAULT '默认公众号',
+      account_type TEXT NOT NULL DEFAULT 'subscription',
       enabled BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()

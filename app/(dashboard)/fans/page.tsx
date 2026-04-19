@@ -3,12 +3,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { Search, RefreshCw, Trash2, UserPlus } from 'lucide-react';
+import { Search, RefreshCw, Trash2 } from 'lucide-react';
 
 interface Fan {
   id: number;
@@ -26,6 +26,11 @@ interface Fan {
   createdAt: string;
 }
 
+// 个人订阅号没有高级API权限
+function canSyncFans(accountType: string | undefined) {
+  return accountType !== 'subscription' && accountType !== 'miniprogram';
+}
+
 export default function FansPage() {
   const [fans, setFans] = useState<Fan[]>([]);
   const [total, setTotal] = useState(0);
@@ -33,7 +38,18 @@ export default function FansPage() {
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [accountType, setAccountType] = useState<string>('subscription');
   const limit = 20;
+
+  // 获取公众号类型
+  useEffect(() => {
+    fetch('/api/wechat/config')
+      .then(r => r.json())
+      .then(data => {
+        if (data.accountType) setAccountType(data.accountType);
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchFans = useCallback(async () => {
     setLoading(true);
@@ -83,26 +99,44 @@ export default function FansPage() {
 
   function formatSubscribeTime(time: string | null) {
     if (!time) return '-';
-    const date = new Date(parseInt(time) * 1000);
-    return date.toLocaleDateString('zh-CN', {
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit',
-    });
+    // 尝试 Unix 时间戳格式
+    const ts = parseInt(time);
+    if (!isNaN(ts) && ts > 1000000000) {
+      const date = new Date(ts * 1000);
+      return date.toLocaleDateString('zh-CN', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+      });
+    }
+    // ISO 格式
+    return time;
   }
 
   const sexMap: Record<number, string> = { 0: '未知', 1: '男', 2: '女' };
+  const showSync = canSyncFans(accountType);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">粉丝管理</h1>
-          <p className="text-muted-foreground">共 {total} 个粉丝</p>
+          <p className="text-muted-foreground">
+            共 {total} 个粉丝
+            {!showSync && (
+              <span className="ml-2 text-xs">（通过关注事件自动积累）</span>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleSync} disabled={syncing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? '同步中...' : '从微信同步'}
+          {showSync && (
+            <Button variant="outline" onClick={handleSync} disabled={syncing}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? '同步中...' : '从微信同步'}
+            </Button>
+          )}
+          <Button variant="outline" onClick={fetchFans} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            刷新
           </Button>
         </div>
       </div>
@@ -126,7 +160,11 @@ export default function FansPage() {
             <div className="text-center py-8 text-muted-foreground">加载中...</div>
           ) : fans.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              {search ? '未找到匹配的粉丝' : '暂无粉丝数据，点击"从微信同步"获取粉丝列表'}
+              {search ? '未找到匹配的粉丝' : (
+                showSync
+                  ? '暂无粉丝数据，点击"从微信同步"获取粉丝列表'
+                  : '暂无粉丝数据，用户关注公众号后将自动记录'
+              )}
             </div>
           ) : (
             <>

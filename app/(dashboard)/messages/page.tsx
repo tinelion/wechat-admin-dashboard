@@ -18,6 +18,11 @@ interface Message {
   createdAt: string;
 }
 
+// 个人订阅号不能主动发消息
+function canSendMessages(accountType: string | undefined) {
+  return accountType !== 'subscription' && accountType !== 'miniprogram';
+}
+
 export default function MessagesPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [total, setTotal] = useState(0);
@@ -25,8 +30,19 @@ export default function MessagesPage() {
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
   const [sending, setSending] = useState(false);
+  const [accountType, setAccountType] = useState<string>('subscription');
   const offset = useRef(0);
   const limit = 50;
+
+  // 获取公众号类型
+  useEffect(() => {
+    fetch('/api/wechat/config')
+      .then(r => r.json())
+      .then(data => {
+        if (data.accountType) setAccountType(data.accountType);
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchMessages = useCallback(async () => {
     setLoading(true);
@@ -93,16 +109,24 @@ export default function MessagesPage() {
     });
   }
 
+  const showReply = canSendMessages(accountType);
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">消息管理</h1>
-        <p className="text-muted-foreground">查看和回复粉丝消息（每10秒自动刷新）</p>
+        <p className="text-muted-foreground">
+          查看粉丝消息（每10秒自动刷新）
+          {!showReply && <span className="ml-1">· 当前公众号类型不支持主动回复</span>}
+        </p>
       </div>
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">消息列表</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">消息列表</CardTitle>
+            <Badge variant="outline">{total} 条</Badge>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -151,7 +175,7 @@ export default function MessagesPage() {
                     </div>
                     <div className="flex items-center justify-between mt-1 px-1">
                       <span className="text-xs text-muted-foreground">{formatTime(msg.createdAt)}</span>
-                      {!msg.isOutgoing && msg.msgType === 'text' && (
+                      {showReply && !msg.isOutgoing && msg.msgType === 'text' && (
                         <Button
                           variant="ghost" size="sm"
                           className="h-6 text-xs"

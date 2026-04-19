@@ -19,6 +19,7 @@ export const wechatConfig = pgTable('wechat_config', {
   appid: text('appid').notNull(),
   appSecret: text('app_secret').notNull(),
   name: text('name').notNull().default('默认公众号'),
+  accountType: text('account_type').notNull().default('subscription'),
   enabled: boolean('enabled').notNull().default(true),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -165,7 +166,7 @@ export async function getConfig() {
   return db.select().from(wechatConfig).where(eq(wechatConfig.enabled, true)).then(r => r[0]);
 }
 
-export async function saveConfig(data: { appid: string; appSecret: string; name?: string }) {
+export async function saveConfig(data: { appid: string; appSecret: string; name?: string; accountType?: string }) {
   const existing = await getConfig();
   if (existing) {
     return db.update(wechatConfig)
