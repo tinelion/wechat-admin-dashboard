@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { db, users } from '@/lib/db';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
   providers: [
     Credentials({
       name: 'credentials',
@@ -31,7 +32,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           };
         } catch (error) {
           console.error('Auth error:', error);
-          throw new Error('数据库连接失败，请检查环境变量配置');
+          return null;
         }
       },
     }),
