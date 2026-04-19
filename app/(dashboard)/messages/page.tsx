@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Send } from 'lucide-react';
+import { useAccount } from '../account-context';
 
 interface Message {
   id: number;
@@ -24,30 +25,21 @@ function canSendMessages(accountType: string | undefined) {
 }
 
 export default function MessagesPage() {
+  const { currentAccount, currentAccountId } = useAccount();
   const [messages, setMessages] = useState<Message[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
   const [sending, setSending] = useState(false);
-  const [accountType, setAccountType] = useState<string>('subscription');
   const offset = useRef(0);
   const limit = 50;
 
-  // 获取公众号类型
-  useEffect(() => {
-    fetch('/api/wechat/config')
-      .then(r => r.json())
-      .then(data => {
-        if (data.accountType) setAccountType(data.accountType);
-      })
-      .catch(() => {});
-  }, []);
-
   const fetchMessages = useCallback(async () => {
+    if (!currentAccountId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/messages?offset=${offset.current}&limit=${limit}`);
+      const res = await fetch(`/api/messages?offset=${offset.current}&limit=${limit}&configId=${currentAccountId}`);
       const data = await res.json();
       setMessages(data.messages || []);
       setTotal(data.total || 0);
@@ -56,7 +48,13 @@ export default function MessagesPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentAccountId]);
+
+  useEffect(() => {
+    setMessages([]);
+    setTotal(0);
+    offset.current = 0;
+  }, [currentAccountId]);
 
   useEffect(() => {
     fetchMessages();
@@ -66,13 +64,13 @@ export default function MessagesPage() {
   }, [fetchMessages]);
 
   async function handleSend(openid: string) {
-    if (!replyContent.trim()) return;
+    if (!replyContent.trim() || !currentAccountId) return;
     setSending(true);
     try {
       const res = await fetch('/api/messages/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ openid, content: replyContent }),
+        body: JSON.stringify({ openid, content: replyContent, configId: currentAccountId }),
       });
       const data = await res.json();
       if (data.error) {
@@ -109,7 +107,15 @@ export default function MessagesPage() {
     });
   }
 
-  const showReply = canSendMessages(accountType);
+  const showReply = canSendMessages(currentAccount?.accountType);
+
+  if (!currentAccountId) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">请先选择公众号</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

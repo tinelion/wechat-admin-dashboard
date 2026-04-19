@@ -10,7 +10,8 @@ export async function GET(request: NextRequest) {
     }
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || undefined;
-    const replies = await getAutoReplies(type);
+    const configId = searchParams.get('configId') ? parseInt(searchParams.get('configId')!) : undefined;
+    const replies = await getAutoReplies(type, configId);
     return NextResponse.json(replies);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -24,7 +25,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
     const body = await request.json();
-    await createAutoReply(body);
+    const { configId, ...replyData } = body;
+    await createAutoReply(replyData, configId);
     return NextResponse.json({ success: true, message: '规则已创建' });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

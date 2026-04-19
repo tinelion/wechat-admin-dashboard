@@ -3,13 +3,16 @@ import { getActiveMenu, saveMenuConfig, publishMenu } from '@/lib/db';
 import { createMenu, getMenu as getWechatMenu, deleteMenu as deleteWechatMenu } from '@/lib/wechat';
 import { auth } from '@/lib/auth';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
-    const menu = await getActiveMenu();
+    const { searchParams } = new URL(request.url);
+    const configId = searchParams.get('configId') ? parseInt(searchParams.get('configId')!) : undefined;
+
+    const menu = await getActiveMenu(configId);
     if (menu) {
       return NextResponse.json({
         id: menu.id,
@@ -41,38 +44,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
     const body = await request.json();
-    const { config, action } = body;
+    const { config, action, configId } = body;
+    const parsedConfigId = configId ? parseInt(configId) : undefined;
 
     if (action === 'publish') {
       // Save locally first
-      await saveMenuConfig({ config: JSON.stringify(config) });
+      await saveMenuConfig({ config: JSON.stringify(config) }, parsedConfigId);
       // Then publish to WeChat
-      const result = await createMenu(config);
+      const result = await createMenu(config, parsedConfigId);
       if (result.errcode && result.errcode !== 0) {
         return NextResponse.json({
           error: `微信API错误 [${result.errcode}]: ${result.errmsg}`,
           errcode: result.errcode,
         }, { status: 400 });
       }
-      await publishMenu(JSON.stringify(config));
+      await publishMenu(JSON.stringify(config), parsedConfigId);
       return NextResponse.json({ success: true, message: '菜单已发布到微信' });
     }
 
     // Just save locally
-    await saveMenuConfig({ config: JSON.stringify(config) });
+    await saveMenuConfig({ config: JSON.stringify(config) }, parsedConfigId);
     return NextResponse.json({ success: true, message: '菜单已保存' });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || '保存菜单失败' }, { status: 500 });
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
-    const result = await deleteWechatMenu();
+    const { searchParams } = new URL(request.url);
+    const configId = searchParams.get('configId') ? parseInt(searchParams.get('configId')!) : undefined;
+
+    const result = await deleteWechatMenu(configId);
     if (result.errcode && result.errcode !== 0) {
       return NextResponse.json({ error: `微信API错误: ${result.errmsg}` }, { status: 400 });
     }

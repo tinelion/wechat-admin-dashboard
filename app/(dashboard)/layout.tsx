@@ -9,7 +9,8 @@ import {
   Settings,
   PanelLeft,
   Menu,
-  Reply
+  Reply,
+  ChevronDown,
 } from 'lucide-react';
 
 import {
@@ -22,7 +23,15 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Badge } from '@/components/ui/badge';
 import Providers from './providers';
+import { AccountProvider, useAccount } from './account-context';
 import { NavItem } from './nav-item';
 import { User } from './user';
 
@@ -35,6 +44,57 @@ const navItems = [
   { href: '/settings', label: '系统设置', icon: Settings },
 ];
 
+function AccountSwitcher() {
+  const { accounts, currentAccount, currentAccountId, switchAccount, loading } = useAccount();
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground">
+        加载中...
+      </div>
+    );
+  }
+
+  if (accounts.length === 0) {
+    return (
+      <Link href="/settings">
+        <Badge variant="outline" className="text-orange-600 border-orange-300 cursor-pointer hover:bg-orange-50">
+          请先配置公众号
+        </Badge>
+      </Link>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" className="flex items-center gap-2 h-9 px-3 max-w-[200px]">
+          <span className="truncate text-sm">{currentAccount?.name || '选择公众号'}</span>
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[220px]">
+        {accounts.map((account) => (
+          <DropdownMenuItem
+            key={account.id}
+            onClick={() => switchAccount(account.id)}
+            className={currentAccountId === account.id ? 'bg-accent' : ''}
+          >
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <span className="truncate">{account.name}</span>
+              {currentAccountId === account.id && (
+                <Badge variant="default" className="ml-auto shrink-0 text-xs px-1.5 py-0">
+                  当前
+                </Badge>
+              )}
+            </div>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export default function DashboardLayout({
   children
 }: {
@@ -42,19 +102,23 @@ export default function DashboardLayout({
 }) {
   return (
     <Providers>
-      <main className="flex min-h-screen w-full flex-col bg-muted/40">
-        <DesktopNav />
-        <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-14">
-          <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4 sm:static sm:h-auto sm:border-0 sm:bg-transparent sm:px-6">
-            <MobileNav />
-            <DashboardBreadcrumb />
-            <User />
-          </header>
-          <main className="grid flex-1 items-start gap-2 p-4 sm:px-6 sm:py-0 md:gap-4 bg-muted/40">
-            {children}
-          </main>
-        </div>
-      </main>
+      <AccountProvider>
+        <main className="flex min-h-screen w-full flex-col bg-muted/40">
+          <DesktopNav />
+          <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-14">
+            <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4 sm:static sm:h-auto sm:border-0 sm:bg-transparent sm:px-6">
+              <MobileNav />
+              <DashboardBreadcrumb />
+              <div className="flex-1" />
+              <AccountSwitcher />
+              <User />
+            </header>
+            <main className="grid flex-1 items-start gap-2 p-4 sm:px-6 sm:py-0 md:gap-4 bg-muted/40">
+              {children}
+            </main>
+          </div>
+        </main>
+      </AccountProvider>
     </Providers>
   );
 }

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySignature } from '@/lib/wechat';
-import { upsertFan, getFanByOpenid, addMessage, incrementStat, getAutoReplies, getConfig, db, fans } from '@/lib/db';
-import { sendTextMessage } from '@/lib/wechat';
-import { eq, sql } from 'drizzle-orm';
+import { upsertFan, getFanByOpenid, addMessage, incrementStat, getAutoReplies, getConfig, db, fans, wechatConfig } from '@/lib/db';
+import { sendTextMessage, getUserInfo } from '@/lib/wechat';
+import { eq, sql, and } from 'drizzle-orm';
 import crypto from 'crypto';
 
 // Parse XML body
@@ -27,6 +27,12 @@ function buildTextXml(toUser: string, fromUser: string, content: string): string
   </xml>`;
 }
 
+// Find config by appid (ToUserName in WeChat messages is the appid)
+async function findConfigByAppid(appid: string) {
+  const result = await db.select().from(wechatConfig).where(eq(wechatConfig.appid, appid));
+  return result[0];
+}
+
 // GET: WeChat server verification
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -35,7 +41,15 @@ export async function GET(request: NextRequest) {
   const nonce = searchParams.get('nonce') || '';
   const echostr = searchParams.get('echostr') || '';
 
-  const config = await getConfig();
+  // Try to find config by appid if provided, otherwise use default
+  const appid = searchParams.get('appid');
+  let config;
+  if (appid) {
+    config = await findConfigByAppid(appid);
+  }
+  if (!config) {
+    config = await getConfig();
+  }
   if (!config) {
     return NextResponse.json({ error: '请先配置微信公众号' }, { status: 500 });
   }
@@ -55,7 +69,7 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const data = parseXml(body);
 
-    const toUser = data.ToUserName;       // 公众号 openid
+    const toUser = data.ToUserName;       // 公众号 appid
     const fromUser = data.FromUserName;   // 用户 openid
     const msgType = data.MsgType;
     const event = data.Event;
@@ -63,12 +77,16 @@ export async function POST(request: NextRequest) {
     const content = data.Content;
     const createTime = data.CreateTime;
 
+    // Find config by appid (ToUserName)
+    const config = await findConfigByAppid(toUser);
+    const configId = config?.id;
+
     // Handle different message types and events
     let replyXml = '';
 
     switch (msgType) {
       case 'event':
-        replyXml = await handleEvent(event, eventKey, fromUser, toUser, createTime);
+        replyXml = await handleEvent(event, eventKey, fromUser, toUser, createTime, configId);
         break;
 
       case 'text':
@@ -78,11 +96,11 @@ export async function POST(request: NextRequest) {
           msgType: 'text',
           content,
           msgId: data.MsgId,
-        });
-        await incrementStat('messageCount');
+        }, configId);
+        await incrementStat('messageCount', configId);
 
         // Try auto-reply
-        replyXml = await handleTextMessage(fromUser, toUser, content);
+        replyXml = await handleTextMessage(fromUser, toUser, content, configId);
         break;
 
       case 'image':
@@ -92,8 +110,8 @@ export async function POST(request: NextRequest) {
           picUrl: data.PicUrl,
           mediaId: data.MediaId,
           msgId: data.MsgId,
-        });
-        await incrementStat('messageCount');
+        }, configId);
+        await incrementStat('messageCount', configId);
         break;
 
       case 'voice':
@@ -104,8 +122,8 @@ export async function POST(request: NextRequest) {
           recognition: data.Recognition,
           format: data.Format,
           msgId: data.MsgId,
-        });
-        await incrementStat('messageCount');
+        }, configId);
+        await incrementStat('messageCount', configId);
         break;
 
       case 'video':
@@ -116,8 +134,8 @@ export async function POST(request: NextRequest) {
           mediaId: data.MediaId,
           thumbMediaId: data.ThumbMediaId,
           msgId: data.MsgId,
-        });
-        await incrementStat('messageCount');
+        }, configId);
+        await incrementStat('messageCount', configId);
         break;
 
       case 'location':
@@ -128,8 +146,8 @@ export async function POST(request: NextRequest) {
           locationY: parseFloat(data.Location_Y),
           label: data.Label,
           msgId: data.MsgId,
-        });
-        await incrementStat('messageCount');
+        }, configId);
+        await incrementStat('messageCount', configId);
         break;
 
       case 'link':
@@ -140,8 +158,8 @@ export async function POST(request: NextRequest) {
           description: data.Description,
           url: data.Url,
           msgId: data.MsgId,
-        });
-        await incrementStat('messageCount');
+        }, configId);
+        await incrementStat('messageCount', configId);
         break;
 
       default:
@@ -168,7 +186,8 @@ async function handleEvent(
   eventKey: string | undefined,
   fromUser: string,
   toUser: string,
-  createTime: string | undefined
+  createTime: string | undefined,
+  configId?: number
 ): Promise<string> {
   if (!event) return '';
 
@@ -180,13 +199,12 @@ async function handleEvent(
         msgType: 'text',
         content: '用户关注了公众号',
         event: 'subscribe',
-      });
-      await incrementStat('newFans');
+      }, configId);
+      await incrementStat('newFans', configId);
 
       // Try to get user info from WeChat and save to fans table
       try {
-        const { getUserInfo } = await import('@/lib/wechat');
-        const userInfo = await getUserInfo(fromUser);
+        const userInfo = await getUserInfo(fromUser, configId);
         if (userInfo && !userInfo.errcode) {
           await upsertFan({
             openid: userInfo.openid,
@@ -200,7 +218,7 @@ async function handleEvent(
             subscribe: true,
             subscribeTime: userInfo.subscribe_time ? String(userInfo.subscribe_time) : createTime,
             subscribeScene: userInfo.subscribe_scene || eventKey || '',
-          });
+          }, configId);
         }
       } catch {
         // If WeChat API fails, still save basic info
@@ -209,11 +227,11 @@ async function handleEvent(
           subscribe: true,
           subscribeTime: createTime,
           subscribeScene: eventKey || '',
-        });
+        }, configId);
       }
 
       // Send subscribe auto-reply
-      const subscribeReplies = await getAutoReplies('subscribe');
+      const subscribeReplies = await getAutoReplies('subscribe', configId);
       if (subscribeReplies.length > 0 && subscribeReplies[0].enabled) {
         return buildTextXml(fromUser, toUser, subscribeReplies[0].replyContent);
       }
@@ -227,15 +245,15 @@ async function handleEvent(
         msgType: 'text',
         content: '用户取消了关注',
         event: 'unsubscribe',
-      });
-      await incrementStat('unfollowFans');
+      }, configId);
+      await incrementStat('unfollowFans', configId);
 
       // Update fan status
-      const existing = await getFanByOpenid(fromUser);
+      const existing = await getFanByOpenid(fromUser, configId);
       if (existing) {
         await db.update(fans)
           .set({ subscribe: false, updatedAt: new Date() })
-          .where(eq(fans.openid, fromUser));
+          .where(eq(fans.id, existing.id));
       }
       return '';
     }
@@ -248,7 +266,7 @@ async function handleEvent(
         content: `扫码参数: ${eventKey || '-'}`,
         event: 'SCAN',
         eventKey,
-      });
+      }, configId);
       return '';
     }
 
@@ -260,7 +278,7 @@ async function handleEvent(
         content: `点击菜单: ${eventKey || '-'}`,
         event: 'CLICK',
         eventKey,
-      });
+      }, configId);
       return '';
     }
 
@@ -272,7 +290,7 @@ async function handleEvent(
         content: `跳转: ${eventKey || '-'}`,
         event: 'VIEW',
         eventKey,
-      });
+      }, configId);
       return '';
     }
 
@@ -282,7 +300,7 @@ async function handleEvent(
         openid: fromUser,
         msgType: 'location',
         event: 'LOCATION',
-      });
+      }, configId);
       return '';
     }
 
@@ -295,10 +313,11 @@ async function handleEvent(
 async function handleTextMessage(
   fromUser: string,
   toUser: string,
-  content: string
+  content: string,
+  configId?: number
 ): Promise<string> {
   // 1. Try exact keyword match
-  const keywordReplies = await getAutoReplies('keyword');
+  const keywordReplies = await getAutoReplies('keyword', configId);
   for (const rule of keywordReplies) {
     if (!rule.enabled || !rule.keyword) continue;
 
@@ -311,7 +330,7 @@ async function handleTextMessage(
   }
 
   // 2. Try default reply
-  const defaultReplies = await getAutoReplies('default');
+  const defaultReplies = await getAutoReplies('default', configId);
   if (defaultReplies.length > 0 && defaultReplies[0].enabled) {
     return buildTextXml(fromUser, toUser, defaultReplies[0].replyContent);
   }

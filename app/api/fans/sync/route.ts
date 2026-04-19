@@ -11,12 +11,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
+    const body = await request.json();
+    const configId = body.configId ? parseInt(body.configId) : undefined;
+
     let allOpenids: string[] = [];
     let nextOpenid: string | undefined;
 
     // Fetch all follower openids
     do {
-      const result = await getFollowers(nextOpenid);
+      const result = await getFollowers(nextOpenid, configId);
       if (result.errcode) {
         return NextResponse.json({ error: `微信API错误: ${result.errmsg}` }, { status: 400 });
       }
@@ -30,10 +33,10 @@ export async function POST(request: NextRequest) {
     let newCount = 0;
     for (let i = 0; i < allOpenids.length; i += 100) {
       const batch = allOpenids.slice(i, i + 100);
-      const result = await batchGetUserInfo(batch);
+      const result = await batchGetUserInfo(batch, configId);
       if (result.user_info_list) {
         for (const userInfo of result.user_info_list) {
-          const existing = await getFanByOpenid(userInfo.openid);
+          const existing = await getFanByOpenid(userInfo.openid, configId);
           await upsertFan({
             openid: userInfo.openid,
             nickname: userInfo.nickname,
@@ -46,10 +49,10 @@ export async function POST(request: NextRequest) {
             subscribe: userInfo.subscribe === 1,
             subscribeTime: userInfo.subscribe_time ? String(userInfo.subscribe_time) : undefined,
             subscribeScene: userInfo.subscribe_scene,
-          });
+          }, configId);
           if (!existing) {
             newCount++;
-            await incrementStat('newFans');
+            await incrementStat('newFans', configId);
           }
           syncedCount++;
         }

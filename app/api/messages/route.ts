@@ -11,8 +11,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const offset = parseInt(searchParams.get('offset') || '0');
     const limit = parseInt(searchParams.get('limit') || '50');
+    const configId = searchParams.get('configId') ? parseInt(searchParams.get('configId')!) : undefined;
 
-    const result = await getMessages(offset, limit);
+    const result = await getMessages(offset, limit, configId);
     return NextResponse.json(result);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -26,7 +27,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
     const body = await request.json();
-    await addMessage(body);
+    const { configId, ...msgData } = body;
+    await addMessage(msgData, configId);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

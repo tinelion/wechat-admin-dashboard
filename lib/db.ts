@@ -1,5 +1,5 @@
 import 'server-only';
-import { pgTable, text, integer, real, boolean, serial, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, real, boolean, serial, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { count, eq, like, desc, and, sql, or } from 'drizzle-orm';
 import type { NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -27,7 +27,8 @@ export const wechatConfig = pgTable('wechat_config', {
 
 export const fans = pgTable('fans', {
   id: serial('id').primaryKey(),
-  openid: text('openid').notNull().unique(),
+  configId: integer('config_id'),
+  openid: text('openid').notNull(),
   nickname: text('nickname'),
   headimgurl: text('headimgurl'),
   sex: integer('sex'),
@@ -46,6 +47,7 @@ export const fans = pgTable('fans', {
 
 export const messages = pgTable('messages', {
   id: serial('id').primaryKey(),
+  configId: integer('config_id'),
   msgId: text('msg_id'),
   openid: text('openid').notNull(),
   msgType: text('msg_type').notNull(),
@@ -70,6 +72,7 @@ export const messages = pgTable('messages', {
 
 export const autoReplies = pgTable('auto_replies', {
   id: serial('id').primaryKey(),
+  configId: integer('config_id'),
   type: text('type').notNull(),
   keyword: text('keyword'),
   matchType: text('match_type').notNull().default('exact'),
@@ -88,6 +91,7 @@ export const autoReplies = pgTable('auto_replies', {
 
 export const menuConfig = pgTable('menu_config', {
   id: serial('id').primaryKey(),
+  configId: integer('config_id'),
   name: text('name').notNull().default('默认菜单'),
   config: text('config').notNull(),
   isPublished: boolean('is_published').notNull().default(false),
@@ -98,7 +102,8 @@ export const menuConfig = pgTable('menu_config', {
 
 export const dailyStats = pgTable('daily_stats', {
   id: serial('id').primaryKey(),
-  date: text('date').notNull().unique(),
+  configId: integer('config_id'),
+  date: text('date').notNull(),
   newFans: integer('new_fans').notNull().default(0),
   unfollowFans: integer('unfollow_fans').notNull().default(0),
   totalFans: integer('total_fans').notNull().default(0),
@@ -162,10 +167,39 @@ export const db = new Proxy({} as AnyDatabase, {
 
 // ==================== Helper Functions ====================
 
-export async function getConfig() {
+// Config management
+export async function getConfig(configId?: number) {
+  if (configId) {
+    const result = await db.select().from(wechatConfig).where(eq(wechatConfig.id, configId));
+    return result[0];
+  }
   return db.select().from(wechatConfig).where(eq(wechatConfig.enabled, true)).then(r => r[0]);
 }
 
+export async function getAllConfigs() {
+  return db.select().from(wechatConfig).orderBy(desc(wechatConfig.createdAt));
+}
+
+export async function getConfigById(id: number) {
+  const result = await db.select().from(wechatConfig).where(eq(wechatConfig.id, id));
+  return result[0];
+}
+
+export async function deleteConfig(id: number) {
+  return db.delete(wechatConfig).where(eq(wechatConfig.id, id));
+}
+
+export async function createConfig(data: { appid: string; appSecret: string; name?: string; accountType?: string }) {
+  return db.insert(wechatConfig).values(data);
+}
+
+export async function updateConfig(id: number, data: { appid?: string; appSecret?: string; name?: string; accountType?: string; enabled?: boolean }) {
+  return db.update(wechatConfig)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(wechatConfig.id, id));
+}
+
+// Backward-compatible saveConfig
 export async function saveConfig(data: { appid: string; appSecret: string; name?: string; accountType?: string }) {
   const existing = await getConfig();
   if (existing) {
@@ -177,15 +211,22 @@ export async function saveConfig(data: { appid: string; appSecret: string; name?
 }
 
 // Fans
-export async function getFans(search: string = '', offset: number = 0, limit: number = 20) {
-  const whereClause = search
-    ? or(
+export async function getFans(search: string = '', offset: number = 0, limit: number = 20, configId?: number) {
+  const conditions = [];
+  if (search) {
+    conditions.push(
+      or(
         like(fans.nickname, `%${search}%`),
         like(fans.openid, `%${search}%`),
         like(fans.city, `%${search}%`),
         like(fans.province, `%${search}%`)
       )
-    : undefined;
+    );
+  }
+  if (configId) {
+    conditions.push(eq(fans.configId, configId));
+  }
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
   const totalResult = await db.select({ count: count() }).from(fans).where(whereClause);
   const list = await db.select().from(fans)
@@ -197,8 +238,12 @@ export async function getFans(search: string = '', offset: number = 0, limit: nu
   return { fans: list, total: totalResult[0]?.count || 0 };
 }
 
-export async function getFanByOpenid(openid: string) {
-  const result = await db.select().from(fans).where(eq(fans.openid, openid));
+export async function getFanByOpenid(openid: string, configId?: number) {
+  const conditions = [eq(fans.openid, openid)];
+  if (configId) {
+    conditions.push(eq(fans.configId, configId));
+  }
+  const result = await db.select().from(fans).where(and(...conditions));
   return result[0];
 }
 
@@ -214,29 +259,36 @@ export async function upsertFan(data: {
   subscribe?: boolean;
   subscribeTime?: string;
   subscribeScene?: string;
-}) {
-  const existing = await getFanByOpenid(data.openid);
+}, configId?: number) {
+  const existing = await getFanByOpenid(data.openid, configId);
   if (existing) {
     return db.update(fans)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(fans.openid, data.openid));
+      .where(eq(fans.id, existing.id));
   }
-  return db.insert(fans).values(data);
+  return db.insert(fans).values({ ...data, configId: configId || null });
 }
 
 export async function deleteFan(id: number) {
   return db.delete(fans).where(eq(fans.id, id));
 }
 
-export async function getFansCount() {
-  const result = await db.select({ count: count() }).from(fans).where(eq(fans.subscribe, true));
+export async function getFansCount(configId?: number) {
+  const conditions = [eq(fans.subscribe, true)];
+  if (configId) {
+    conditions.push(eq(fans.configId, configId));
+  }
+  const result = await db.select({ count: count() }).from(fans).where(and(...conditions));
   return result[0]?.count || 0;
 }
 
 // Messages
-export async function getMessages(offset: number = 0, limit: number = 50) {
-  const totalResult = await db.select({ count: count() }).from(messages);
+export async function getMessages(offset: number = 0, limit: number = 50, configId?: number) {
+  const whereClause = configId ? eq(messages.configId, configId) : undefined;
+
+  const totalResult = await db.select({ count: count() }).from(messages).where(whereClause);
   const list = await db.select().from(messages)
+    .where(whereClause)
     .orderBy(desc(messages.createdAt))
     .limit(limit)
     .offset(offset);
@@ -262,26 +314,37 @@ export async function addMessage(data: {
   title?: string;
   description?: string;
   url?: string;
-}) {
-  return db.insert(messages).values(data);
+}, configId?: number) {
+  return db.insert(messages).values({ ...data, configId: configId || null });
 }
 
-export async function getTodayMessageCount() {
+export async function getTodayMessageCount(configId?: number) {
   const today = new Date().toISOString().slice(0, 10);
+  const conditions = [sql`date(created_at) = ${today}`];
+  if (configId) {
+    conditions.push(eq(messages.configId, configId));
+  }
   const result = await db.select({ count: count() })
     .from(messages)
-    .where(sql`date(created_at) = ${today}`);
+    .where(and(...conditions));
   return result[0]?.count || 0;
 }
 
 // Auto Replies
-export async function getAutoReplies(type?: string) {
+export async function getAutoReplies(type?: string, configId?: number) {
+  const conditions = [];
   if (type) {
-    return db.select().from(autoReplies)
-      .where(and(eq(autoReplies.type, type), eq(autoReplies.enabled, true)))
-      .orderBy(desc(autoReplies.priority));
+    conditions.push(eq(autoReplies.type, type));
+    conditions.push(eq(autoReplies.enabled, true));
   }
-  return db.select().from(autoReplies).orderBy(desc(autoReplies.priority));
+  if (configId) {
+    conditions.push(eq(autoReplies.configId, configId));
+  }
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  return db.select().from(autoReplies)
+    .where(whereClause)
+    .orderBy(desc(autoReplies.priority));
 }
 
 export async function getAutoReplyById(id: number) {
@@ -301,8 +364,8 @@ export async function createAutoReply(data: {
   url?: string;
   picUrl?: string;
   priority?: number;
-}) {
-  return db.insert(autoReplies).values(data);
+}, configId?: number) {
+  return db.insert(autoReplies).values({ ...data, configId: configId || null });
 }
 
 export async function updateAutoReply(id: number, data: Record<string, unknown>) {
@@ -320,23 +383,27 @@ export async function getMenuConfigs() {
   return db.select().from(menuConfig).orderBy(desc(menuConfig.updatedAt));
 }
 
-export async function getActiveMenu() {
-  const result = await db.select().from(menuConfig).where(eq(menuConfig.isPublished, true));
+export async function getActiveMenu(configId?: number) {
+  const conditions = [eq(menuConfig.isPublished, true)];
+  if (configId) {
+    conditions.push(eq(menuConfig.configId, configId));
+  }
+  const result = await db.select().from(menuConfig).where(and(...conditions));
   return result[0];
 }
 
-export async function saveMenuConfig(data: { name?: string; config: string }) {
-  const active = await getActiveMenu();
+export async function saveMenuConfig(data: { name?: string; config: string }, configId?: number) {
+  const active = await getActiveMenu(configId);
   if (active) {
     return db.update(menuConfig)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(menuConfig.id, active.id));
   }
-  return db.insert(menuConfig).values(data);
+  return db.insert(menuConfig).values({ ...data, configId: configId || null });
 }
 
-export async function publishMenu(config: string) {
-  const active = await getActiveMenu();
+export async function publishMenu(config: string, configId?: number) {
+  const active = await getActiveMenu(configId);
   if (active) {
     return db.update(menuConfig)
       .set({
@@ -350,29 +417,38 @@ export async function publishMenu(config: string) {
   return db.insert(menuConfig).values({
     name: '默认菜单',
     config,
+    configId: configId || null,
     isPublished: true,
     publishedAt: new Date()
   });
 }
 
 // Stats
-export async function getTodayStats() {
+export async function getTodayStats(configId?: number) {
   const today = new Date().toISOString().slice(0, 10);
-  const result = await db.select().from(dailyStats).where(eq(dailyStats.date, today));
+  const conditions = [eq(dailyStats.date, today)];
+  if (configId) {
+    conditions.push(eq(dailyStats.configId, configId));
+  }
+  const result = await db.select().from(dailyStats).where(and(...conditions));
   if (result[0]) return result[0];
 
-  const totalFans = await getFansCount();
-  await db.insert(dailyStats).values({ date: today, totalFans });
-  const created = await db.select().from(dailyStats).where(eq(dailyStats.date, today));
+  const totalFans = await getFansCount(configId);
+  await db.insert(dailyStats).values({ date: today, totalFans, configId: configId || null });
+  const created = await db.select().from(dailyStats).where(and(...conditions));
   return created[0];
 }
 
-export async function getRecentStats(days: number = 30) {
+export async function getRecentStats(days: number = 30, configId?: number) {
   const date = new Date();
   date.setDate(date.getDate() - days);
   const dateStr = date.toISOString().slice(0, 10);
+  const conditions = [sql`date >= ${dateStr}`];
+  if (configId) {
+    conditions.push(eq(dailyStats.configId, configId));
+  }
   return db.select().from(dailyStats)
-    .where(sql`date >= ${dateStr}`)
+    .where(and(...conditions))
     .orderBy(dailyStats.date);
 }
 
@@ -382,16 +458,20 @@ const statFieldMap: Record<string, string> = {
   messageCount: 'message_count',
 };
 
-export async function incrementStat(field: 'newFans' | 'unfollowFans' | 'messageCount') {
+export async function incrementStat(field: 'newFans' | 'unfollowFans' | 'messageCount', configId?: number) {
   const today = new Date().toISOString().slice(0, 10);
   const colName = statFieldMap[field];
-  const existing = await db.select().from(dailyStats).where(eq(dailyStats.date, today));
+  const conditions = [eq(dailyStats.date, today)];
+  if (configId) {
+    conditions.push(eq(dailyStats.configId, configId));
+  }
+  const existing = await db.select().from(dailyStats).where(and(...conditions));
   if (existing[0]) {
     await db.update(dailyStats)
-      .set({ [colName]: sql`${sql.raw(colName)} + 1`, totalFans: await getFansCount() })
-      .where(eq(dailyStats.date, today));
+      .set({ [colName]: sql`${sql.raw(colName)} + 1`, totalFans: await getFansCount(configId) })
+      .where(eq(dailyStats.id, existing[0].id));
   } else {
-    const totalFans = await getFansCount();
-    await db.insert(dailyStats).values({ date: today, [colName]: 1, totalFans });
+    const totalFans = await getFansCount(configId);
+    await db.insert(dailyStats).values({ date: today, [colName]: 1, totalFans, configId: configId || null });
   }
 }

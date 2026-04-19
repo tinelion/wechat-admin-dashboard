@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   Plus, Trash2, Save, Upload, ChevronDown, ChevronRight, ExternalLink,
 } from 'lucide-react';
+import { useAccount } from '../account-context';
 
 interface MenuItem {
   name: string;
@@ -43,6 +44,7 @@ const typeOptions = [
 ];
 
 export default function MenuPage() {
+  const { currentAccountId } = useAccount();
   const [menuData, setMenuData] = useState<MenuData | null>(null);
   const [buttons, setButtons] = useState<MenuItem[]>(defaultMenu);
   const [loading, setLoading] = useState(true);
@@ -51,9 +53,10 @@ export default function MenuPage() {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   const fetchMenu = useCallback(async () => {
+    if (!currentAccountId) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/menu');
+      const res = await fetch(`/api/menu?configId=${currentAccountId}`);
       const data = await res.json();
       setMenuData(data);
       if (data.config?.button) {
@@ -64,7 +67,13 @@ export default function MenuPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentAccountId]);
+
+  useEffect(() => {
+    setMenuData(null);
+    setButtons(defaultMenu);
+    setExpandedIndex(null);
+  }, [currentAccountId]);
 
   useEffect(() => {
     fetchMenu();
@@ -109,12 +118,13 @@ export default function MenuPage() {
   }
 
   async function handleSave() {
+    if (!currentAccountId) return;
     setSaving(true);
     try {
       const res = await fetch('/api/menu', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: { button: buttons }, action: 'save' }),
+        body: JSON.stringify({ config: { button: buttons }, action: 'save', configId: currentAccountId }),
       });
       const data = await res.json();
       if (data.error) {
@@ -131,13 +141,14 @@ export default function MenuPage() {
   }
 
   async function handlePublish() {
+    if (!currentAccountId) return;
     if (!confirm('确定要发布菜单到微信吗？这将替换当前微信上的菜单。')) return;
     setPublishing(true);
     try {
       const res = await fetch('/api/menu', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: { button: buttons }, action: 'publish' }),
+        body: JSON.stringify({ config: { button: buttons }, action: 'publish', configId: currentAccountId }),
       });
       const data = await res.json();
       if (data.error) {
@@ -154,9 +165,10 @@ export default function MenuPage() {
   }
 
   async function handleDelete() {
+    if (!currentAccountId) return;
     if (!confirm('确定要删除微信上的菜单吗？')) return;
     try {
-      const res = await fetch('/api/menu', { method: 'DELETE' });
+      const res = await fetch(`/api/menu?configId=${currentAccountId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.error) {
         alert(data.error);
@@ -329,6 +341,14 @@ export default function MenuPage() {
             )}
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (!currentAccountId) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">请先选择公众号</p>
       </div>
     );
   }

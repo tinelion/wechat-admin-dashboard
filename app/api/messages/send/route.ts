@@ -10,13 +10,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
     const body = await request.json();
-    const { openid, content } = body;
+    const { openid, content, configId } = body;
 
     if (!openid || !content) {
       return NextResponse.json({ error: 'openid 和 content 不能为空' }, { status: 400 });
     }
 
-    const result = await sendTextMessage(openid, content);
+    const parsedConfigId = configId ? parseInt(configId) : undefined;
+
+    const result = await sendTextMessage(openid, content, parsedConfigId);
     if (result.errcode && result.errcode !== 0) {
       return NextResponse.json({ error: `发送失败: ${result.errmsg}` }, { status: 400 });
     }
@@ -27,7 +29,7 @@ export async function POST(request: NextRequest) {
       msgType: 'text',
       content,
       isOutgoing: true,
-    });
+    }, parsedConfigId);
 
     return NextResponse.json({ success: true, message: '消息已发送' });
   } catch (error: any) {

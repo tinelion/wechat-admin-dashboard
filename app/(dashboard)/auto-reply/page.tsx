@@ -12,6 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
 import { Plus, Trash2, Edit, MessageCircle, Shield } from 'lucide-react';
+import { useAccount } from '../account-context';
 
 interface AutoReply {
   id: number;
@@ -38,6 +39,7 @@ const matchTypeLabels: Record<string, string> = {
 };
 
 export default function AutoReplyPage() {
+  const { currentAccountId } = useAccount();
   const [rules, setRules] = useState<AutoReply[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -52,9 +54,10 @@ export default function AutoReplyPage() {
   });
 
   const fetchRules = async () => {
+    if (!currentAccountId) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/auto-replies');
+      const res = await fetch(`/api/auto-replies?configId=${currentAccountId}`);
       const data = await res.json();
       setRules(data || []);
     } catch (error) {
@@ -65,8 +68,12 @@ export default function AutoReplyPage() {
   };
 
   useEffect(() => {
+    setRules([]);
+  }, [currentAccountId]);
+
+  useEffect(() => {
     fetchRules();
-  }, []);
+  }, [currentAccountId]);
 
   function openCreate(type: string) {
     setEditingRule(null);
@@ -88,18 +95,19 @@ export default function AutoReplyPage() {
   }
 
   async function handleSave() {
+    if (!currentAccountId) return;
     try {
       if (editingRule) {
         await fetch('/api/auto-replies', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: editingRule.id, ...form }),
+          body: JSON.stringify({ id: editingRule.id, ...form, configId: currentAccountId }),
         });
       } else {
         await fetch('/api/auto-replies', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
+          body: JSON.stringify({ ...form, configId: currentAccountId }),
         });
       }
       setDialogOpen(false);
@@ -112,11 +120,19 @@ export default function AutoReplyPage() {
   async function handleDelete(id: number) {
     if (!confirm('确定要删除该规则吗？')) return;
     try {
-      await fetch(`/api/auto-replies?id=${id}`, { method: 'DELETE' });
+      await fetch(`/api/auto-replies?id=${id}&configId=${currentAccountId}`, { method: 'DELETE' });
       fetchRules();
     } catch (error) {
       console.error('Failed to delete rule:', error);
     }
+  }
+
+  if (!currentAccountId) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">请先选择公众号</p>
+      </div>
+    );
   }
 
   return (

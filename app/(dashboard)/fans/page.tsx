@@ -9,6 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Search, RefreshCw, Trash2 } from 'lucide-react';
+import { useAccount } from '../account-context';
 
 interface Fan {
   id: number;
@@ -32,29 +33,20 @@ function canSyncFans(accountType: string | undefined) {
 }
 
 export default function FansPage() {
+  const { currentAccount, currentAccountId } = useAccount();
   const [fans, setFans] = useState<Fan[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [accountType, setAccountType] = useState<string>('subscription');
   const limit = 20;
 
-  // 获取公众号类型
-  useEffect(() => {
-    fetch('/api/wechat/config')
-      .then(r => r.json())
-      .then(data => {
-        if (data.accountType) setAccountType(data.accountType);
-      })
-      .catch(() => {});
-  }, []);
-
   const fetchFans = useCallback(async () => {
+    if (!currentAccountId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/fans?search=${search}&offset=${offset}&limit=${limit}`);
+      const res = await fetch(`/api/fans?search=${search}&offset=${offset}&limit=${limit}&configId=${currentAccountId}`);
       const data = await res.json();
       setFans(data.fans || []);
       setTotal(data.total || 0);
@@ -63,16 +55,23 @@ export default function FansPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, offset]);
+  }, [search, offset, currentAccountId]);
+
+  useEffect(() => {
+    setFans([]);
+    setTotal(0);
+    setOffset(0);
+  }, [currentAccountId]);
 
   useEffect(() => {
     fetchFans();
   }, [fetchFans]);
 
   async function handleSync() {
+    if (!currentAccountId) return;
     setSyncing(true);
     try {
-      const res = await fetch('/api/fans/sync', { method: 'POST' });
+      const res = await fetch(`/api/fans/sync?configId=${currentAccountId}`, { method: 'POST' });
       const data = await res.json();
       if (data.error) {
         alert(data.error);
@@ -90,7 +89,7 @@ export default function FansPage() {
   async function handleDelete(id: number) {
     if (!confirm('确定要删除该粉丝记录吗？')) return;
     try {
-      await fetch(`/api/fans?id=${id}`, { method: 'DELETE' });
+      await fetch(`/api/fans?id=${id}&configId=${currentAccountId}`, { method: 'DELETE' });
       fetchFans();
     } catch (error) {
       console.error('Failed to delete fan:', error);
@@ -113,7 +112,15 @@ export default function FansPage() {
   }
 
   const sexMap: Record<number, string> = { 0: '未知', 1: '男', 2: '女' };
-  const showSync = canSyncFans(accountType);
+  const showSync = canSyncFans(currentAccount?.accountType);
+
+  if (!currentAccountId) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">请先选择公众号</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

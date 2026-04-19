@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, UserPlus, UserMinus, MessageSquare, TrendingUp } from 'lucide-react';
+import { useAccount } from './account-context';
 
 interface TodayStats {
   newFans: number;
@@ -20,12 +21,18 @@ interface DailyStat {
 }
 
 export default function DashboardPage() {
+  const { currentAccount, currentAccountId } = useAccount();
   const [stats, setStats] = useState<TodayStats | null>(null);
   const [recent, setRecent] = useState<DailyStat[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/stats')
+    if (!currentAccountId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    fetch(`/api/stats?configId=${currentAccountId}`)
       .then(res => res.json())
       .then(data => {
         setStats(data.today);
@@ -33,12 +40,26 @@ export default function DashboardPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [currentAccountId]);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-muted-foreground">加载中...</div>
+      </div>
+    );
+  }
+
+  if (!currentAccountId) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-4">
+          <div className="text-4xl font-bold text-primary">微</div>
+          <h1 className="text-2xl font-bold tracking-tight">欢迎使用微信公众号管理后台</h1>
+          <p className="text-muted-foreground max-w-md">
+            请先在「系统设置」中配置公众号，然后在顶部导航栏选择要管理的公众号。
+          </p>
+        </div>
       </div>
     );
   }
@@ -82,7 +103,9 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">数据概览</h1>
-        <p className="text-muted-foreground">微信公众号运营数据一览</p>
+        <p className="text-muted-foreground">
+          {currentAccount?.name || '微信公众号'}运营数据一览
+        </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
