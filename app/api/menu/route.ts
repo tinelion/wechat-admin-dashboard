@@ -49,7 +49,10 @@ export async function POST(request: NextRequest) {
       // Then publish to WeChat
       const result = await createMenu(config);
       if (result.errcode && result.errcode !== 0) {
-        return NextResponse.json({ error: `微信API错误: ${result.errmsg}` }, { status: 400 });
+        return NextResponse.json({
+          error: `微信API错误 [${result.errcode}]: ${result.errmsg}`,
+          errcode: result.errcode,
+        }, { status: 400 });
       }
       await publishMenu(JSON.stringify(config));
       return NextResponse.json({ success: true, message: '菜单已发布到微信' });

@@ -26,7 +26,7 @@ async function getAccessToken(): Promise<string> {
   const data = await res.json();
 
   if (data.errcode) {
-    throw new Error(`获取 access_token 失败: ${data.errmsg}`);
+    throw new Error(`获取 access_token 失败 [${data.errcode}]: ${data.errmsg}`);
   }
 
   accessToken = data.access_token;
