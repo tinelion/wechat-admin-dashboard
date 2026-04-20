@@ -44,7 +44,7 @@ export default function MaterialPage() {
     try {
       const res = await fetch(`/api/material?type=${activeTab}&configId=${currentAccountId}`);
       const data = await res.json();
-      setMaterials(Array.isArray(data) ? data : data.materials || []);
+      setMaterials(Array.isArray(data) ? data : (Array.isArray(data?.materials) ? data.materials : []));
     } catch (error) {
       console.error('Failed to fetch materials:', error);
     } finally {

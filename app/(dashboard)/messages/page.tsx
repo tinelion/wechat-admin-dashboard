@@ -41,8 +41,8 @@ export default function MessagesPage() {
     try {
       const res = await fetch(`/api/messages?offset=${offset.current}&limit=${limit}&configId=${currentAccountId}`);
       const data = await res.json();
-      setMessages(data.messages || []);
-      setTotal(data.total || 0);
+      setMessages(Array.isArray(data?.messages) ? data.messages : []);
+      setTotal(typeof data?.total === 'number' ? data.total : 0);
     } catch (error) {
       console.error('Failed to fetch messages:', error);
     } finally {

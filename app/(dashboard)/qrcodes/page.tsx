@@ -46,7 +46,7 @@ export default function QrCodesPage() {
     try {
       const res = await fetch(`/api/qrcodes?configId=${currentAccountId}`);
       const data = await res.json();
-      setQrcodes(Array.isArray(data) ? data : data.qrcodes || []);
+      setQrcodes(Array.isArray(data) ? data : (Array.isArray(data?.qrcodes) ? data.qrcodes : []));
     } catch (error) {
       console.error('Failed to fetch qrcodes:', error);
     } finally {

@@ -48,8 +48,8 @@ export default function FansPage() {
     try {
       const res = await fetch(`/api/fans?search=${search}&offset=${offset}&limit=${limit}&configId=${currentAccountId}`);
       const data = await res.json();
-      setFans(data.fans || []);
-      setTotal(data.total || 0);
+      setFans(Array.isArray(data?.fans) ? data.fans : []);
+      setTotal(typeof data?.total === 'number' ? data.total : 0);
     } catch (error) {
       console.error('Failed to fetch fans:', error);
     } finally {

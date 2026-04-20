@@ -55,11 +55,11 @@ export default function DashboardPage() {
       fetch(`/api/messages?configId=${currentAccountId}&limit=5`).then(res => res.json()),
     ])
       .then(([statsData, messagesData]) => {
-        setStats(statsData.today);
-        setRecent(statsData.recent || []);
-        setDaily(statsData.daily || []);
-        setTopKeywords(statsData.topKeywords || []);
-        setRecentMessages(Array.isArray(messagesData) ? messagesData : (messagesData.messages || []));
+        setStats(statsData?.today || null);
+        setRecent(Array.isArray(statsData?.recent) ? statsData.recent : []);
+        setDaily(Array.isArray(statsData?.daily) ? statsData.daily : []);
+        setTopKeywords(Array.isArray(statsData?.topKeywords) ? statsData.topKeywords : []);
+        setRecentMessages(Array.isArray(messagesData) ? messagesData : (Array.isArray(messagesData?.messages) ? messagesData.messages : []));
       })
       .catch(console.error)
       .finally(() => setLoading(false));

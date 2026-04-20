@@ -58,9 +58,11 @@ export default function MenuPage() {
     try {
       const res = await fetch(`/api/menu?configId=${currentAccountId}`);
       const data = await res.json();
-      setMenuData(data);
-      if (data.config?.button) {
-        setButtons(data.config.button);
+      if (data && typeof data === 'object' && !data.error) {
+        setMenuData(data);
+        if (data.config?.button) {
+          setButtons(data.config.button);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch menu:', error);

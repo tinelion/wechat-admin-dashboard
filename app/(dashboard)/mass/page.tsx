@@ -61,7 +61,7 @@ export default function MassPage() {
     try {
       const res = await fetch(`/api/mass?configId=${currentAccountId}`);
       const data = await res.json();
-      setRecords(Array.isArray(data) ? data : data.records || []);
+      setRecords(Array.isArray(data) ? data : (Array.isArray(data?.records) ? data.records : []));
     } catch (error) {
       console.error('Failed to fetch mass records:', error);
     } finally {
@@ -74,7 +74,7 @@ export default function MassPage() {
     try {
       const res = await fetch(`/api/tags?configId=${currentAccountId}`);
       const data = await res.json();
-      setTags(Array.isArray(data) ? data : data.tags || []);
+      setTags(Array.isArray(data) ? data : (Array.isArray(data?.tags) ? data.tags : []));
     } catch (error) {
       console.error('Failed to fetch tags:', error);
     }

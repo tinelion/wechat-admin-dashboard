@@ -45,7 +45,7 @@ export default function TemplatesPage() {
     try {
       const res = await fetch(`/api/templates?configId=${currentAccountId}`);
       const data = await res.json();
-      setTemplates(Array.isArray(data) ? data : data.templates || []);
+      setTemplates(Array.isArray(data) ? data : (Array.isArray(data?.templates) ? data.templates : []));
     } catch (error) {
       console.error('Failed to fetch templates:', error);
     } finally {

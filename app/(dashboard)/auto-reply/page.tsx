@@ -59,7 +59,7 @@ export default function AutoReplyPage() {
     try {
       const res = await fetch(`/api/auto-replies?configId=${currentAccountId}`);
       const data = await res.json();
-      setRules(data || []);
+      setRules(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to fetch rules:', error);
     } finally {
